@@ -77,16 +77,13 @@
         // Activar el modo de depuración para App Check en entornos de prueba.
         self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
         
+        // Usar la clave de sitio correcta.
         const recaptchaSiteKey = '6LePDJUrAAAAAEfDSJSDMMX-08TaIaXdi9XMn13Y';
-        const placeholderKey = 'PON_AQUI_TU_CLAVE_DEL_SITIO_DE_RECAPTCHA';
 
-        // CORRECCIÓN: Se inicializa App Check solo si la clave NO es el placeholder.
-        if (recaptchaSiteKey !== placeholderKey) {
-            const appCheck = initializeAppCheck(app, {
-              provider: new ReCaptchaV3Provider(recaptchaSiteKey), 
-              isTokenAutoRefreshEnabled: true
-            });
-        }
+        const appCheck = initializeAppCheck(app, {
+          provider: new ReCaptchaV3Provider(recaptchaSiteKey), 
+          isTokenAutoRefreshEnabled: true
+        });
 
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -134,10 +131,6 @@
         const paymentForm = document.getElementById('online-payment-form');
         paymentForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            if (recaptchaSiteKey === placeholderKey) {
-                showMessage('CONFIGURACIÓN REQUERIDA', 'Por favor, añade tu clave de sitio de reCAPTCHA para que la aplicación funcione.');
-                return;
-            }
             if (!currentUser) {
                 showMessage('Error', 'Debes estar autenticado para realizar un pago.');
                 return;
@@ -176,10 +169,6 @@
             messageModal.classList.add('hidden');
         }
         
-        if (recaptchaSiteKey === placeholderKey) {
-            showMessage('CONFIGURACIÓN REQUERIDA', 'Por favor, reemplaza el texto "PON_AQUI_TU_CLAVE_DEL_SITIO_DE_RECAPTCHA" en el código con tu clave de sitio de reCAPTCHA para que la aplicación funcione.');
-        }
-
     </script>
 </body>
 </html>
