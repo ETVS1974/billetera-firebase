@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billetera Digital Segura</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-2xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-600">Billetera Digital</h1>
+            <p class="text-gray-600 mt-2">Tu dinero, seguro y en la nube.</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-xl font-semibold mb-4">Mi Saldo</h2>
+            <div class="flex justify-between items-center">
+                <p id="balance" class="text-3xl font-bold text-green-500">$0.00</p>
+            </div>
+            <div id="auth-status" class="text-sm text-gray-500 mt-4">Estado: No autenticado</div>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Realizar Pago Online</h2>
+            <form id="online-payment-form">
+                <div class="mb-4">
+                    <label for="recipient-phone" class="block text-sm font-medium text-gray-700 mb-1">Teléfono del Destinatario</label>
+                    <input type="tel" id="recipient-phone" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Ej: 987654321" required>
+                </div>
+                <div class="mb-6">
+                    <label for="online-amount" class="block text-sm font-medium text-gray-700 mb-1">Monto a Enviar</label>
+                    <input type="number" id="online-amount" step="0.01" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Ej: 50.00" required>
+                </div>
+                <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300 text-lg">
+                    Pagar Ahora
+                </button>
+            </form>
+        </div>
+
+        <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+            <div class="bg-white p-8 rounded-xl shadow-2xl text-center max-w-sm mx-auto">
+                <h3 id="message-title" class="text-2xl font-bold mb-4"></h3>
+                <p id="message-body" class="text-gray-700 mb-6"></p>
+                <button onclick="hideMessage()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+        import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCawL-9eLC5NzcBN0_yw5314YVKMBjIEqk",
+            authDomain: "monedero-ciudadano-piloto.firebaseapp.com",
+            projectId: "monedero-ciudadano-piloto",
+            storageBucket: "monedero-ciudadano-piloto.firebasestorage.app",
+            messagingSenderId: "188984653024",
+            appId: "1:188984653024:web:6b29e3e65defa44caf4c85",
+            measurementId: "G-CV0S486V1B"
+        };
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        
+        // Activar el modo de depuración para App Check en entornos de prueba.
+        self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+        
+        const recaptchaSiteKey = '6LeLcpMrAAAAAAyCIAk2E06z5NRZLKURpjgbTBaP';
+        const placeholderKey = 'PON_AQUI_TU_CLAVE_DEL_SITIO_DE_RECAPTCHA';
+
+        // CORRECCIÓN: Se inicializa App Check solo si la clave NO es el placeholder.
+        if (recaptchaSiteKey !== placeholderKey) {
+            const appCheck = initializeAppCheck(app, {
+              provider: new ReCaptchaV3Provider(recaptchaSiteKey), 
+              isTokenAutoRefreshEnabled: true
+            });
+        }
+
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const functions = getFunctions(app, 'us-central1');
+
+        let currentUser = null;
+
+        onAuthStateChanged(auth, (user) => {
+            const authStatusEl = document.getElementById('auth-status');
+            if (user) {
+                currentUser = user;
+                authStatusEl.textContent = `Autenticado como: ${user.uid.substring(0, 10)}...`;
+                authStatusEl.classList.remove('text-red-500');
+                authStatusEl.classList.add('text-green-500');
+                listenToWallet(user.uid);
+            } else {
+                authStatusEl.textContent = 'Usuario no autenticado. Iniciando sesión anónima...';
+                signInAnonymously(auth).catch(error => {
+                    authStatusEl.textContent = 'Error al autenticar.';
+                    showMessage('Error de Red', 'No se pudo conectar a Firebase. Revisa tu conexión y la configuración del proyecto.');
+                });
+            }
+        });
+
+        function listenToWallet(userId) {
+            const walletRef = doc(db, 'Billeteras', userId);
+            onSnapshot(walletRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    const balance = calcularBalance(data.saldoActivo);
+                    document.getElementById('balance').textContent = `$${balance.toFixed(2)}`;
+                } else {
+                    document.getElementById('balance').textContent = '$0.00';
+                }
+            });
+        }
+
+        const calcularBalance = (denoms) => {
+            if (!denoms) return 0;
+            return Object.entries(denoms).reduce((total, [denomStr, count]) => {
+                return total + (parseFloat(denomStr) * count);
+            }, 0);
+        };
+
+        const paymentForm = document.getElementById('online-payment-form');
+        paymentForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (recaptchaSiteKey === placeholderKey) {
+                showMessage('CONFIGURACIÓN REQUERIDA', 'Por favor, añade tu clave de sitio de reCAPTCHA para que la aplicación funcione.');
+                return;
+            }
+            if (!currentUser) {
+                showMessage('Error', 'Debes estar autenticado para realizar un pago.');
+                return;
+            }
+            const recipientPhone = document.getElementById('recipient-phone').value;
+            const amount = parseFloat(document.getElementById('online-amount').value);
+            executeOnlinePayment(amount, recipientPhone);
+        });
+
+        async function executeOnlinePayment(monto, telefonoDestinatario) {
+            showMessage('Procesando...', 'Tu pago se está enviando de forma segura.');
+            const procesarPagoOnline = httpsCallable(functions, 'procesarPagoOnline');
+            try {
+                const result = await procesarPagoOnline({ 
+                    monto: monto, 
+                    telefonoDestinatario: telefonoDestinatario
+                });
+                showMessage('¡Éxito!', result.data.message);
+                paymentForm.reset();
+            } catch (error) {
+                showMessage('Error en el Pago', error.message);
+            }
+        }
+
+        const messageModal = document.getElementById('message-modal');
+        const messageTitle = document.getElementById('message-title');
+        const messageBody = document.getElementById('message-body');
+
+        function showMessage(title, body) {
+            messageTitle.textContent = title;
+            messageBody.textContent = body;
+            messageModal.classList.remove('hidden');
+        }
+
+        window.hideMessage = function() {
+            messageModal.classList.add('hidden');
+        }
+        
+        if (recaptchaSiteKey === placeholderKey) {
+            showMessage('CONFIGURACIÓN REQUERIDA', 'Por favor, reemplaza el texto "PON_AQUI_TU_CLAVE_DEL_SITIO_DE_RECAPTCHA" en el código con tu clave de sitio de reCAPTCHA para que la aplicación funcione.');
+        }
+
+    </script>
+</body>
+</html>
